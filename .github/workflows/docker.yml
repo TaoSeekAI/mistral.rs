@@ -2,11 +2,13 @@ name: Build and Publish Docker Images
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master, main, 'vk/*' ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ master, main ]
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly build on Monday at 2 AM UTC
 
 env:
   REGISTRY: ghcr.io
@@ -72,8 +74,14 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         platforms: ${{ matrix.platform }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: |
+          type=gha
+          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+        cache-to: |
+          type=gha,mode=max
+          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
 
     - name: Build and push CUDA Docker image
       if: matrix.dockerfile == 'Dockerfile.cuda-all'
@@ -88,8 +96,13 @@ jobs:
         build-args: |
           CUDA_COMPUTE_CAP=89
           WITH_FEATURES=cuda,cudnn,flash-attn
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+          BUILDKIT_INLINE_CACHE=1
+        cache-from: |
+          type=gha
+          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda
+        cache-to: |
+          type=gha,mode=max
+          type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-cuda,mode=max
 
   test-docker-images:
     name: Test Docker Images
@@ -138,13 +151,26 @@ jobs:
           --name mistralrs-test-cpu \
           -p 1234:80 \
           -v $(pwd)/test-config.json:/app/config.json \
+          -e RUST_LOG=info \
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
           mistralrs-server --port 80 multi-model --config /app/config.json
 
-        sleep 30
+        # Wait for server to start
+        for i in {1..10}; do
+          if curl -f http://localhost:1234/v1/models 2>/dev/null; then
+            echo "Server is ready"
+            break
+          fi
+          echo "Waiting for server to start... ($i/10)"
+          sleep 5
+        done
 
-        # Test API
+        # Test API endpoints
         curl -f http://localhost:1234/v1/models || exit 1
+        curl -f http://localhost:1234/health || exit 1
+
+        # Check logs for any errors
+        docker logs mistralrs-test-cpu
 
         docker stop mistralrs-test-cpu
         docker rm mistralrs-test-cpu

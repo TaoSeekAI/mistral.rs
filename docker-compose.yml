@@ -1,19 +1,29 @@
-version: '3.8'
-
 services:
   mistralrs-cpu:
     build:
       context: .
       dockerfile: Dockerfile
+      cache_from:
+        - ghcr.io/${GITHUB_REPOSITORY:-mistralrs/mistralrs}:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-mistralrs/mistralrs}:latest
     container_name: mistralrs-cpu
     ports:
-      - "1234:80"
+      - "${MISTRALRS_PORT:-1234}:80"
     volumes:
       - mistralrs-data:/data
-      - ./test-multi-config.json:/app/config.json
+      - ./test-multi-config.json:/app/config.json:ro
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
       - HUGGINGFACE_HUB_CACHE=/data
       - PORT=80
+      - RUST_LOG=${RUST_LOG:-info}
+      - HF_TOKEN=${HF_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     profiles:
       - cpu
@@ -23,20 +33,32 @@ services:
       context: .
       dockerfile: Dockerfile.cuda-all
       args:
-        - CUDA_COMPUTE_CAP=89
+        - CUDA_COMPUTE_CAP=${CUDA_COMPUTE_CAP:-89}
         - WITH_FEATURES=cuda,cudnn,flash-attn
+      cache_from:
+        - ghcr.io/${GITHUB_REPOSITORY:-mistralrs/mistralrs}:latest-cuda
+    image: ghcr.io/${GITHUB_REPOSITORY:-mistralrs/mistralrs}:latest-cuda
     container_name: mistralrs-gpu
     ports:
-      - "1234:80"
+      - "${MISTRALRS_PORT:-1234}:80"
     volumes:
       - mistralrs-data:/data
-      - ./test-multi-config.json:/app/config.json
+      - ./test-multi-config.json:/app/config.json:ro
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     environment:
       - HUGGINGFACE_HUB_CACHE=/data
       - PORT=80
-      - NVIDIA_VISIBLE_DEVICES=all
+      - RUST_LOG=${RUST_LOG:-info}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     runtime: nvidia
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
     deploy:
       resources:
@@ -48,10 +70,44 @@ services:
     profiles:
       - gpu
 
+  # Development container with hot-reload support
+  mistralrs-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: mistralrs-dev
+    ports:
+      - "${MISTRALRS_PORT:-1234}:80"
+      - "${DEBUG_PORT:-5678}:5678"  # Debug port
+    volumes:
+      - .:/mistralrs:cached
+      - mistralrs-data:/data
+      - cargo-cache:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+      - target-cache:/mistralrs/target
+    environment:
+      - HUGGINGFACE_HUB_CACHE=/data
+      - PORT=80
+      - RUST_LOG=${RUST_LOG:-debug}
+      - RUST_BACKTRACE=1
+      - HF_TOKEN=${HF_TOKEN:-}
+    working_dir: /mistralrs
+    command: cargo watch -x 'run --release -- --port 80 multi-model --config /app/config.json'
+    profiles:
+      - dev
+
 volumes:
   mistralrs-data:
+    driver: local
+  cargo-cache:
+    driver: local
+  cargo-git:
+    driver: local
+  target-cache:
     driver: local
 
 networks:
   default:
     name: mistralrs-network
+    driver: bridge

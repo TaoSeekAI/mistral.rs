@@ -1,0 +1,107 @@
+name: Docker Compose CI
+
+on:
+  push:
+    branches: [ master, main, 'vk/*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  docker-compose-test:
+    name: Test Docker Compose Setup
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create .env file
+      run: |
+        cp .env.example .env
+        echo "GITHUB_REPOSITORY=${{ github.repository }}" >> .env
+        echo "HF_TOKEN=${{ secrets.HF_TOKEN }}" >> .env
+
+    - name: Test Docker Compose CPU profile
+      run: |
+        # Build and start CPU profile
+        docker compose --profile cpu build
+        docker compose --profile cpu up -d
+
+        # Wait for service to be healthy
+        for i in {1..20}; do
+          if docker compose --profile cpu ps | grep -q "healthy"; then
+            echo "Service is healthy"
+            break
+          fi
+          echo "Waiting for service to be healthy... ($i/20)"
+          sleep 10
+        done
+
+        # Test API endpoint
+        curl -f http://localhost:1234/v1/models || exit 1
+
+        # Check logs
+        docker compose --profile cpu logs
+
+        # Stop services
+        docker compose --profile cpu down
+
+    - name: Test Docker Compose GPU profile (simulation)
+      run: |
+        # Note: This won't actually use GPU on GitHub Actions, but tests the compose setup
+        # Skip if no NVIDIA runtime available
+        if ! docker info | grep -q nvidia; then
+          echo "No NVIDIA runtime available, skipping GPU test"
+          exit 0
+        fi
+
+        docker compose --profile gpu build
+        # Don't actually run GPU profile in CI as it requires NVIDIA runtime
+
+    - name: Validate Docker Compose configuration
+      run: |
+        docker compose config --quiet
+        docker compose --profile cpu config --quiet
+        docker compose --profile gpu config --quiet
+        docker compose --profile dev config --quiet
+
+    - name: Test development profile build
+      run: |
+        docker compose --profile dev build --progress plain
+
+  docker-compose-lint:
+    name: Lint Docker Files
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Hadolint Dockerfile
+      uses: hadolint/hadolint-action@v3.1.0
+      with:
+        dockerfile: Dockerfile
+        ignore: DL3008,DL3009
+
+    - name: Hadolint Dockerfile.cuda-all
+      uses: hadolint/hadolint-action@v3.1.0
+      with:
+        dockerfile: Dockerfile.cuda-all
+        ignore: DL3008,DL3009
+
+    - name: Validate docker-compose.yml
+      run: |
+        docker compose -f docker-compose.yml config --quiet
+
+    - name: Check for security issues with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'table'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH'

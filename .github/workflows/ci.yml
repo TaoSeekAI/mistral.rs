@@ -127,6 +127,18 @@ jobs:
         with:
           command: check
           args: --workspace
+
+  docker-compose-validate:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose.yml
+        run: |
+          docker compose config --quiet
+          docker compose --profile cpu config --quiet
+          docker compose --profile gpu config --quiet
+          docker compose --profile dev config --quiet
   
   # run `mlc` (`cargo install mlc`)
   # markdown-link-check:
