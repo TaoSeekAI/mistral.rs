@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Build environment
-FROM rust:latest AS builder
+FROM rust:1.83 AS builder
 
 # Set working directory and copy files
 WORKDIR /mistralrs
