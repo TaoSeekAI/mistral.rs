@@ -1,0 +1,29 @@
+services:
+  mistralrs:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda-all
+      args:
+        CUDA_COMPUTE_CAP: "89"
+        WITH_FEATURES: cuda,cudnn,flash-attn
+    container_name: mistralrs-gpu
+    ports:
+      - "1234:80"
+    volumes:
+      - mistralrs-data:/data
+      - ./test-multi-config.json:/app/config.json
+    environment:
+      - HUGGINGFACE_HUB_CACHE=/data
+      - PORT=80
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  mistralrs-data:
+    driver: local

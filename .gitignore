@@ -6,3 +6,34 @@
 .idea
 mistral.rs/
 mistralrs-web-chat/cache
+
+# Docker files
+server.log
+server-gpu.log
+docker-compose.override.yml
+Dockerfile.composite
+test-config.json
+
+# Local development files
+*.local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Cache directories
+.cache/
+*.cache
+.huggingface/
+
+# Docker volumes
+docker-volumes/
+
+# Log files
+*.log
+logs/
+
+# Build artifacts
+build/
+dist/
