@@ -24,15 +24,15 @@ jobs:
 
     strategy:
       matrix:
-        dockerfile: [ 'Dockerfile', 'Dockerfile.cuda-all' ]
+        dockerfile: [ 'Dockerfile' ]  # Temporarily disable CUDA build
         include:
           - dockerfile: 'Dockerfile'
             image-suffix: ''
             platform: 'linux/amd64'
-          - dockerfile: 'Dockerfile.cuda-all'
-            image-suffix: '-cuda'
-            platform: 'linux/amd64'
-            requires-gpu: true
+          # - dockerfile: 'Dockerfile.cuda-all'
+          #   image-suffix: '-cuda'
+          #   platform: 'linux/amd64'
+          #   requires-gpu: true
 
     steps:
     - name: Checkout repository
@@ -112,7 +112,7 @@ jobs:
 
     strategy:
       matrix:
-        image-suffix: [ '', '-cuda' ]
+        image-suffix: [ '' ]  # Only test CPU for now
 
     steps:
     - name: Checkout repository
